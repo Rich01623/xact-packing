@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frost Transport | Secure Booking Portal</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        :root { --frost-red: #c32026; --frost-dark-navy: #0f172a; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background-image: url('Pic-35-1.png'); background-size: cover; background-attachment: fixed; padding-bottom: 60px; }
+        body::before { content: ""; position: fixed; inset: 0; background: rgba(241, 245, 249, 0.82); z-index: 0; }
+        
+        .app-screen { display: none !important; position: relative; z-index: 10; }
+        .active-screen { display: block !important; }
+        
+        #authOverlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(12px); z-index: 100; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 40px 0; }
+        .frost-card { background: white; border-radius: 6px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .frost-input { height: 42px; border: 1px solid #cbd5e1; padding: 0 0.75rem; border-radius: 4px; width: 100%; font-size: 0.85rem; outline: none; transition: all 0.2s; }
+        .frost-input:focus { border-color: var(--frost-red); ring: 2px solid rgba(195, 32, 38, 0.1); }
+        .label-text { font-size: 10px; font-weight: 900; color: #475569; text-transform: uppercase; margin-bottom: 4px; display: block; }
+        .btn-primary { background: var(--frost-red); color: white; font-weight: 900; text-transform: uppercase; cursor: pointer; transition: all 0.2s; border: none; }
+        .btn-primary:hover { background: #a31a1f; transform: translateY(-1px); }
+        .btn-primary:disabled { background: #64748b; cursor: not-allowed; }
+        
+        .vehicle-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; border: 2px solid transparent; background: white; position: relative; }
+        .vehicle-card:hover { transform: translateY(-8px); border-color: var(--frost-red); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+        
+        #map { width: 100%; height: 350px; border-radius: 4px; border: 1px solid #cbd5e1; background: #eee; }
+        .summary-sidebar { position: sticky; top: 20px; background: #0f172a; color: white; min-height: 580px; }
+        .status-bar { position: fixed; bottom: 0; left: 0; right: 0; height: 30px; background: #0f172a; color: #64748b; font-size: 9px; display: flex; align-items: center; padding: 0 20px; font-weight: 800; text-transform: uppercase; z-index: 50; border-top: 1px solid #334155; }
+        #status-badge { background: #334155; padding: 4px 10px; border-radius: 4px; font-size: 10px; color: white; font-weight: 900; display: inline-block; }
+    </style>
+</head>
+<body>
+
+    <div style="display: none;">
+        <img src="logo.png" id="pdfLogoSource">
+        <input type="hidden" id="custEmail"><input type="hidden" id="userId">
+        <input type="hidden" id="activeRate"><input type="hidden" id="activeMPG"><input type="hidden" id="activeVehicleName">
+    </div>
+
+    <div id="screen-auth" class="app-screen active-screen">
+        <div id="authOverlay">
+            <div class="bg-white p-10 rounded-lg shadow-2xl w-[450px] border-b-8 border-red-600 flex flex-col items-center my-auto">
+                <img src="logo.png" class="h-32 mb-6">
+                <h2 id="authTitle" class="text-xl font-black italic mb-2 text-slate-800 uppercase tracking-tight text-center">User Login</h2>
+                <div class="space-y-3 w-full text-left">
+                    <div id="regFields" style="display: none;" class="space-y-3 pt-2 border-t border-slate-100 mt-2">
+                        <div><span class="label-text">Full Name</span><input type="text" id="regFullName" class="frost-input"></div>
+                        <div><span class="label-text">Company Address</span><input type="text" id="regAddress" class="frost-input"></div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div><span class="label-text">Company Phone</span><input type="tel" id="regCompPhone" class="frost-input"></div>
+                            <div><span class="label-text">Mobile Number</span><input type="tel" id="regMobile" class="frost-input"></div>
+                        </div>
+                    </div>
+                    <div><span class="label-text">Email Address</span><input type="email" id="email" class="frost-input"></div>
+                    <div><span class="label-text">Password</span><input type="password" id="password" class="frost-input"></div>
+                    <button onclick="handleAuth()" id="loginBtn" class="w-full btn-primary py-4 rounded shadow-lg mt-4 text-center">Secure Login</button>
+                    <div class="mt-4 text-center">
+                        <button onclick="toggleAuthMode()" id="toggleBtn" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-red-600">Register New Account</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-fleet" class="app-screen max-w-[1200px] mx-auto py-16 px-6">
+        <div class="text-center mb-14">
+            <img src="logo.png" class="h-32 mx-auto mb-6">
+            <h2 class="text-xl font-bold text-slate-500 uppercase tracking-widest mb-1">Welcome back, <span id="fleetUserName" class="text-red-600">User</span></h2>
+            <div id="fleetDateTime" class="text-sm font-black text-slate-400 mb-8 font-mono"></div>
+            <h1 class="text-4xl font-black italic uppercase text-slate-800 tracking-tighter">Select Vehicle</h1>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="vehicle-card p-10 rounded-lg shadow-lg text-center" onclick="selectVehicle('44T Articulated', 65.85, 8)">
+                <i class="fa-solid fa-truck-moving text-4xl text-red-600 mb-6"></i>
+                <h3 class="text-xl font-black uppercase italic text-slate-800">44T Artic</h3>
+            </div>
+            <div class="vehicle-card p-10 rounded-lg shadow-lg text-center" onclick="selectVehicle('26T Rigid', 56.37, 13)">
+                <i class="fa-solid fa-truck text-4xl text-red-600 mb-6"></i>
+                <h3 class="text-xl font-black uppercase italic text-slate-800">26T Rigid</h3>
+            </div>
+            <div class="vehicle-card p-10 rounded-lg shadow-lg text-center" onclick="selectVehicle('7.5T Rigid', 54.44, 17)">
+                <i class="fa-solid fa-truck text-4xl text-red-600 mb-6"></i>
+                <h3 class="text-xl font-black uppercase italic text-slate-800">7.5T Rigid</h3>
+            </div>
+            <div class="vehicle-card p-10 rounded-lg shadow-lg text-center" onclick="selectVehicle('Luton Express', 50.80, 22)">
+                <i class="fa-solid fa-van-shuttle text-4xl text-red-600 mb-6"></i>
+                <h3 class="text-xl font-black uppercase italic text-slate-800">Luton</h3>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-calculator" class="app-screen max-w-[1600px] mx-auto pt-4 px-6">
+        <header class="flex justify-between items-center mb-8 p-6">
+            <div class="flex items-center gap-10">
+                <img src="logo.png" class="h-32">
+                <button onclick="showScreen('fleet')" class="text-[10px] font-black text-slate-800 uppercase border-2 border-slate-800/20 bg-white/60 px-4 py-2 rounded-lg hover:bg-red-600 hover:text-white transition-all">
+                    <i class="fa-solid fa-rotate mr-2"></i> Asset: <span id="displayVehicleName" class="text-red-600"></span>
+                </button>
+            </div>
+            <div class="text-right">
+                <button onclick="showScreen('profile')" id="userBadge" class="text-xs font-black uppercase italic text-slate-900 tracking-tight hover:text-red-600 cursor-pointer">CONNECTED</button>
+                <div class="mt-1"><button onclick="handleLogout()" class="text-[9px] font-bold text-red-600 uppercase tracking-widest hover:underline">Sign Out</button></div>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-12 gap-6">
+            <div class="col-span-12 lg:col-span-9 space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <section class="frost-card p-6 border-t-8 border-slate-800">
+                        <h3 class="text-[14px] font-black text-red-600 uppercase mb-4 italic">01. Routing</h3>
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div><span class="label-text">Collection Date</span><input type="date" id="colDate" class="frost-input font-bold" onchange="validateDates(); update();"></div>
+                            <div><span class="label-text">Delivery Date</span><input type="date" id="delDate" class="frost-input font-bold" onchange="update()"></div>
+                        </div>
+                        <input type="text" id="pickup" class="frost-input uppercase font-bold mb-4" placeholder="COLLECTION ADDRESS">
+                        <input type="text" id="delivery" class="frost-input uppercase font-bold mb-4" placeholder="DELIVERY ADDRESS">
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="p-3 bg-slate-50 border text-center rounded"><span class="label-text">Est. Miles</span><input type="number" id="mileInput" class="w-full text-center font-black text-xl bg-transparent" value="0" oninput="update()" disabled></div>
+                            <div class="p-3 bg-slate-50 border text-center rounded"><span class="label-text">Transit Time</span><input type="number" id="timeInput" class="w-full text-center font-black text-xl bg-transparent" value="0.00" oninput="update()" disabled></div>
+                        </div>
+                    </section>
+
+                    <section class="frost-card p-6 border-t-8 border-slate-800">
+                        <h3 class="text-[14px] font-black text-red-600 uppercase mb-4 italic">02. Requirements</h3>
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div><span class="label-text">Load time (Hrs)</span><input type="number" id="loadHrs" value="1" step="0.5" class="frost-input text-center font-bold" oninput="update()"></div>
+                            <div><span class="label-text">Tip time (Hrs)</span><input type="number" id="tipHrs" value="1" step="0.5" class="frost-input text-center font-bold" oninput="update()"></div>
+                        </div>
+                        <div class="mb-4"><span class="label-text">Customer Job Ref / PO</span><input type="text" id="jobRef" class="frost-input font-bold uppercase"></div>
+                        <div><span class="label-text">Delivery Notes</span><textarea id="jobNotes" class="frost-input h-20 pt-2 text-xs uppercase" placeholder="Instructions..."></textarea></div>
+                    </section>
+                </div>
+                <div id="map" class="shadow-xl"></div>
+            </div>
+
+            <div class="col-span-12 lg:col-span-3">
+                <div class="summary-sidebar p-8 rounded-lg shadow-2xl flex flex-col justify-between border-b-8 border-red-600">
+                    <div>
+                        <div class="flex justify-between items-center mb-6 border-b border-slate-700 pb-4"><h2 class="text-red-500 font-black italic uppercase text-[12px]">Live Quote</h2><div id="status-badge">STANDBY</div></div>
+                        <div id="breakdown" class="space-y-4 text-[13px] font-mono text-slate-300"></div>
+                    </div>
+                    <div>
+                        <div class="text-center mb-8"><span class="label-text text-slate-500 text-xs">Total Estimate (Ex. VAT)</span><div id="totalDisp" class="text-6xl font-black italic tracking-tighter text-white mt-2">£0.00</div></div>
+                        <button id="submitBtn" onclick="saveJob()" class="w-full btn-primary py-5 rounded-lg font-black text-lg mb-3 shadow-lg flex items-center justify-center gap-3"><span id="submitText">Submit Enquiry</span><i id="submitIcon" class="fa-solid fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="screen-profile" class="app-screen max-w-[800px] mx-auto py-16 px-6">
+        <div class="frost-card p-10 border-t-8 border-red-600">
+            <h2 class="text-2xl font-black italic uppercase mb-8">Account Profile</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div><span class="label-text">Full Name</span><input type="text" id="profFullName" class="frost-input"></div>
+                <div><span class="label-text">Email</span><input type="text" id="profEmail" class="frost-input bg-slate-50" disabled></div>
+                <div><span class="label-text">Company Phone</span><input type="tel" id="profCompPhone" class="frost-input"></div>
+                <div><span class="label-text">Mobile</span><input type="tel" id="profMobile" class="frost-input"></div>
+            </div>
+            <button onclick="updateProfile()" id="profUpdateBtn" class="w-full btn-primary py-4 rounded mt-10">Save Updates</button>
+            <button onclick="showScreen('calculator')" class="w-full mt-4 text-xs font-bold uppercase text-slate-400">Back</button>
+        </div>
+    </div>
+
+    <footer class="status-bar"><div>CORE ENGINE: <span class="text-white">FROST-V11.9-STABLE</span></div><div class="ml-auto" id="statusVehicle">AWAITING SELECTION</div></footer>
+
+    <script>
+        const _URL = "https://tdrzytgiqvdulityqttr.supabase.co";
+        const _KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkcnp5dGdpcXZkdWxpdHlxdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNTM5NTMsImV4cCI6MjA4ODcyOTk1M30.XN46i7u6STD-2afmN7-Jh1MltADGpEuWlLt_n7wknbA";
+        const sb = supabase.createClient(_URL, _KEY);
+
+        window.onload = async () => { 
+            startClock(); 
+            const { data: { session } } = await sb.auth.getSession(); 
+            if (session) { setupUser(session.user); showScreen('fleet'); } 
+        };
+
+        function startClock() { setInterval(() => { const now = new Date(); document.getElementById('fleetDateTime').innerText = now.toLocaleString('en-GB').toUpperCase(); }, 1000); }
+
+        async function handleAuth() {
+            const btn = document.getElementById('loginBtn'); const email = document.getElementById('email').value; const password = document.getElementById('password').value;
+            btn.innerText = "PROCESSING...";
+            const isReg = (btn.innerText === "REGISTER ACCOUNT");
+            if(isReg) {
+                const { data, error } = await sb.auth.signUp({ email, password, options: { data: { full_name: document.getElementById('regFullName').value }}});
+                if(error) alert(error.message); else alert("Check email!");
+            } else {
+                const { data, error } = await sb.auth.signInWithPassword({ email, password });
+                if (error) alert("Denied"); else { setupUser(data.user); showScreen('fleet'); }
+            }
+            btn.innerText = "Secure Login";
+        }
+
+        function setupUser(user) {
+            const m = user.user_metadata;
+            document.getElementById('userBadge').innerText = (m?.full_name || 'USER').toUpperCase();
+            document.getElementById('profFullName').value = m?.full_name || '';
+            document.getElementById('profEmail').value = user.email;
+            document.getElementById('custEmail').value = user.email;
+            document.getElementById('userId').value = user.id;
+        }
+
+        function selectVehicle(name, rate, mpg) {
+            document.getElementById('activeRate').value = rate;
+            document.getElementById('activeMPG').value = mpg;
+            document.getElementById('activeVehicleName').value = name;
+            document.getElementById('displayVehicleName').innerText = name.toUpperCase();
+            showScreen('calculator');
+        }
+
+        function showScreen(id) { document.querySelectorAll('.app-screen').forEach(s => s.classList.remove('active-screen')); document.getElementById('screen-' + id).classList.add('active-screen'); }
+        async function handleLogout() { await sb.auth.signOut(); location.reload(); }
+
+        let map, directionsRenderer, directionsService;
+        function initMap() {
+            console.log("Google Maps Initializing...");
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({ polylineOptions: { strokeColor: "#c32026", strokeWeight: 5 } });
+            map = new google.maps.Map(document.getElementById("map"), { zoom: 6, center: { lat: 52.3, lng: -1.1 }, disableDefaultUI: true });
+            directionsRenderer.setMap(map);
+            new google.maps.places.Autocomplete(document.getElementById('pickup')).addListener('place_changed', calculate);
+            new google.maps.places.Autocomplete(document.getElementById('delivery')).addListener('place_changed', calculate);
+        }
+
+        function calculate() {
+            const p = document.getElementById('pickup').value; const d = document.getElementById('delivery').value;
+            if (p.length < 5 || d.length < 5) return;
+            directionsService.route({ origin: p, destination: d, travelMode: google.maps.TravelMode.DRIVING }, (res, stat) => {
+                if (stat === 'OK') {
+                    directionsRenderer.setDirections(res);
+                    const dist = res.routes[0].legs[0].distance.value;
+                    const dur = res.routes[0].legs[0].duration.value;
+                    document.getElementById('mileInput').value = Math.round((dist * 0.000621371) * 1.05);
+                    document.getElementById('timeInput').value = ((dur / 3600) * 1.25).toFixed(2);
+                    update();
+                }
+            });
+        }
+
+        function update() {
+            const rate = parseFloat(document.getElementById('activeRate').value) || 0;
+            const mpg = parseFloat(document.getElementById('activeMPG').value) || 1;
+            const miles = parseFloat(document.getElementById('mileInput').value) || 0;
+            const hours = (parseFloat(document.getElementById('timeInput').value) || 0) + (parseFloat(document.getElementById('loadHrs').value) || 0) + (parseFloat(document.getElementById('tipHrs').value) || 0);
+            
+            const fuel = (miles / mpg) * 4.546 * 1.35;
+            const labor = hours * rate;
+            const total = Math.ceil(((fuel + labor) * 1.15) / 10) * 10;
+            
+            document.getElementById('totalDisp').innerText = '£' + total.toFixed(2);
+            document.getElementById('breakdown').innerHTML = `<div class='flex justify-between'><span>Operational Estimate</span><span>£${total.toFixed(2)}</span></div>`;
+        }
+
+        async function saveJob() {
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true; document.getElementById('submitText').innerText = "Sending...";
+
+            const { error } = await sb.from('quotes').insert([{
+                pickup: document.getElementById('pickup').value,
+                delivery: document.getElementById('delivery').value,
+                col_date: document.getElementById('colDate').value,
+                del_date: document.getElementById('delDate').value,
+                est_miles: parseFloat(document.getElementById('mileInput').value) || 0,
+                est_hours: parseFloat(document.getElementById('timeInput').value) || 0,
+                customer_name: document.getElementById('profFullName').value,
+                customer_email: document.getElementById('custEmail').value,
+                total_price: parseFloat(document.getElementById('totalDisp').innerText.replace('£','')),
+                vehicle_type: document.getElementById('activeVehicleName').value,
+                reference: document.getElementById('jobRef').value,
+                notes: document.getElementById('jobNotes').value,
+                status: 'pending'
+            }]);
+
+            if (error) { alert(error.message); btn.disabled = false; }
+            else { document.getElementById('submitText').innerText = "SENT!"; btn.style.background = "#10b981"; }
+        }
+
+        function validateDates() { document.getElementById('delDate').min = document.getElementById('colDate').value; }
+        function toggleAuthMode() { 
+            const reg = document.getElementById('regFields'); 
+            reg.style.display = reg.style.display === 'none' ? 'block' : 'none'; 
+            document.getElementById('authTitle').innerText = reg.style.display === 'none' ? 'User Login' : 'Create Account';
+            document.getElementById('loginBtn').innerText = reg.style.display === 'none' ? 'Secure Login' : 'Register Account';
+        }
+    </script>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDOPkYduNBvti4HWX2izIhCrrQ02uk5SL0&libraries=places&callback=initMap"></script>
+</body>
+</html>
